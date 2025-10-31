@@ -21,6 +21,7 @@ dist/
 .venv/
 venv/
 env/
+gwpy_venv/
 
 # ==============================
 # VS Code settings
