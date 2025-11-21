@@ -54,19 +54,25 @@ def  S_gal(f,L):
     k = 521
     gam = 1680
 
-    return 2*(omega*L)**2 * np.sin(omega*L)**2*A*f**(-7/3)*np.exp(-f**alpha + beta*f*np.sin(k*f))*(1+np.tanh(gam*(fk-f)))
+    return A*f**(-7/3)*np.exp(-f**alpha + beta*f*np.sin(k*f))*(1+np.tanh(gam*(fk-f)))
 
 def  S_gal2(f, T_obs, L, **kwargs):
+    # T_obs needs to be in yr, given in seconds for FastGB
+    if T_obs > 10:
+        T_obs = T_obs/ (365*24*3600)
     omega = 2*np.pi*f
-    A = 1.15e-44
-    log_f_knee = -0.34*np.log10(T_obs)-2.53
-    log_f1 = -0.22*np.log10(T_obs) -2.78
-    alpha = 1.66
+    A = 1.28265531e-44
+    log_f_knee = -0.360976122*np.log10(T_obs)-2.37822436
+    log_f1 = -0.223499956*np.log10(T_obs) -2.70408439
+    alpha = 1.62966700
     f1 = 10**log_f1
     f_knee = 10**log_f_knee
-    s2 = 4.8108e-4
+    s2 = 4.81078093e-4
+    return A * (f)**(-7/3) * np.exp(-(f/f1)**alpha) * (1+np.tanh(-(f-f_knee)/s2))
 
-    return 2*(omega*L)**2 * np.sin(omega*L)**2 *A * (f)**(-7/3) * np.exp(-(f/f1)**alpha) * (1+np.tanh(-(f-f_knee)/s2))
+def S_gal_response(f,  L, **kwargs):
+    omega = 2*np.pi*f
+    return 2*(omega*L)**2 * np.sin(omega*L)**2 
 
 
 def noise_psd_AE( f, L, tdi, **kwargs):
@@ -94,9 +100,21 @@ def noise_psd_XYZ(f, L, **kwargs):
 
 
 def noise_psd_AE_gal(f, L,tdi, **kwargs):
-    return noise_psd_AE(f, L, tdi) + S_gal(f,L)
+    return noise_psd_AE(f, L, tdi) + 1.5*S_gal_response(f,L)*S_gal(f,L)
 
 
 def noise_psd_AE_gal2(f, L, T_obs,tdi,  **kwargs):
-    return noise_psd_AE(f, L, tdi) + S_gal2(f, T_obs, L)
+    """
+    LISA PSD for A,E TDI channel with galactic confusion noise
+
+    =====
+    f: frequency array
+
+    L: armelngth in seconds
+
+    T_obs: observation time in yr
+
+    tdi: the TDI generation (1.5 or 2.0)
+    """
+    return noise_psd_AE(f, L, tdi) + 1.5*S_gal_response(f,L)* S_gal2(f, T_obs, L)
 
