@@ -49,7 +49,7 @@ def  S_gal(f,L):
     omega = 2 * np.pi * f
     A = 9e-45
     fk = 0.00113 
-    alpha = 1.138
+    alpha = 0.138
     beta = -221
     k = 521
     gam = 1680
@@ -70,20 +70,31 @@ def  S_gal2(f, T_obs, L, **kwargs):
     s2 = 4.81078093e-4
     return A * (f)**(-7/3) * np.exp(-(f/f1)**alpha) * (1+np.tanh(-(f-f_knee)/s2))
 
-def S_gal_response(f,  L, **kwargs):
+def S_gal_response(f,  L, tdi, **kwargs):
+    """
+    Response to galactic noise for channels X,Y,Z and TDI 1.5 or 2.0
+    """
+
     omega = 2*np.pi*f
-    return 2*(omega*L)**2 * np.sin(omega*L)**2 
+    if tdi ==1.5:
+        response = 2*(omega*L)**2 * np.sin(omega*L)**2 
+    if tdi == 2.0:
+        response = 2*(omega*L)**2 * np.sin(omega*L)**2 * 4*np.sin(2*omega*L)**2
+    return response
 
 
 def noise_psd_AE( f, L, tdi, **kwargs):
     """
-    LISA psd for A,E TDi channels
+    LISA psd for A,E TDI channels without galactic confusion
 
     =======
     f: frequency array
 
     L: armlength in seconds
     """
+    if str(tdi) not in ["1.5", "2.0"]:
+        raise ValueError("The version of TDI, currently only for 1.5 or 2.0.")
+    
     return S_acc_AE(f, L, tdi) + S_OMS_AE(f, L, tdi)
 
 def noise_psd_XYZ(f, L, **kwargs):
@@ -99,11 +110,11 @@ def noise_psd_XYZ(f, L, **kwargs):
     return 2* (np.sin(omega*L))**2 *(S_OMS(f) + (3+ np.cos(2*omega*L))*S_acc(f))
 
 
-def noise_psd_AE_gal(f, L,tdi, **kwargs):
-    return noise_psd_AE(f, L, tdi) + 1.5*S_gal_response(f,L)*S_gal(f,L)
+def noise_psd_AE_gal(f, L, tdi, **kwargs):
+    return noise_psd_AE(f, L, tdi) + 1.5*S_gal_response(f,L, tdi)*S_gal(f,L)
 
 
-def noise_psd_AE_gal2(f, L, T_obs,tdi,  **kwargs):
+def noise_psd_AE_gal2(f, L, T_obs, tdi,  **kwargs):
     """
     LISA PSD for A,E TDI channel with galactic confusion noise
 
@@ -115,6 +126,27 @@ def noise_psd_AE_gal2(f, L, T_obs,tdi,  **kwargs):
     T_obs: observation time in yr
 
     tdi: the TDI generation (1.5 or 2.0)
+
+    ====
+    Note: for galactic foreground, PSD_A/E = 1.5 PSD_X
     """
-    return noise_psd_AE(f, L, tdi) + 1.5*S_gal_response(f,L)* S_gal2(f, T_obs, L)
+    if str(tdi) not in ["1.5", "2.0"]:
+        raise ValueError("The version of TDI, currently only for 1.5 or 2.0.")
+    
+    return noise_psd_AE(f, L, tdi) + 1.5*S_gal_response(f,L, tdi)* S_gal2(f, T_obs, L)
+
+from library.sgwb_Boileau import sgwb_noise_boileau
+from pycbc.psd.analytical_space import averaged_response_lisa_tdi
+def noise_psd_AE_Boileau(f, L, tdi, model, **kwargs):
+    return  1.5*averaged_response_lisa_tdi(f, tdi =tdi)* sgwb_noise_boileau(f, model)
+
+
+def S_noise_approx(f):
+    f1 = 0.0004
+    f2 = 0.025
+    S_I = 5.76e-48 * (1 + (f1/f)**2)
+    S_II = 3.6e-41
+    R = (1 + (f/f2)**2)
+    S_noise = 10/3 * (S_I/(2 * np.pi * f)**4 + S_II) * R
+    return S_noise
 

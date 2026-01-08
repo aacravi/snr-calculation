@@ -84,3 +84,20 @@ def tdi_AE_fastGB(f0:float, f_dot:float, ampl:float, bet: float, lam:float, psi:
     A =  1/np.sqrt(2) * (Z - X)
     E = 1/np.sqrt(6)* (X -2*Y + Z)
     return A, E, kmin, fr
+
+
+def tdi_XYZ_fastGB_multi(params_array, delta_t, T_obs, N):
+    fgb = fastgb.FastGB(delta_t=delta_t, T= T_obs, N=N, orbits=EqualArmlengthOrbits())
+    X, Y, Z, kmin = fgb.get_fd_tdixyz(params_array)
+
+    df = 1/T_obs
+    base = np.arange(N)  
+
+    fr = (base[np.newaxis, :] + kmin[:, np.newaxis]) * df
+    return X, Y, Z , kmin, fr
+
+def tdi_AE_fastGB_multi(params_array, delta_t, T_obs, N):
+    X, Y, Z, kmin, fr = tdi_XYZ_fastGB_multi(params_array, delta_t, T_obs, N)
+    A =  1/np.sqrt(2) * (Z - X)
+    E = 1/np.sqrt(6)* (X -2*Y + Z)
+    return A, E, kmin, fr

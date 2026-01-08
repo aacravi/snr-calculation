@@ -52,3 +52,11 @@ Thumbs.db
 GW-assignment.ipynb
 pycbc-snr.ipynb
 test.py 
+Cosmic.ipynb
+binaries_test_1000000
+binaries_test_1000000_SNR_selection
+cosmic-inifile.ini 
+dat_kstar1_11_14_kstar2_11_14_SFstart_13700.0_SFduration_0.0_metallicity_0.014.h5
+log_kstar1_11_14_kstar2_11_14_SFstart_13700.0_SFduration_0.0_metallicity_0.014.txt
+resolved_sources.hdf5
+resolved_sources_1000000.hdf5
