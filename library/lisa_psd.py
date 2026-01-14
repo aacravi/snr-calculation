@@ -2,23 +2,23 @@
 import scipy.constants as constants
 import numpy as np
 
-def C_xx(omega, L, tdi, **kwargs):
+def C_xx(omega,  tdi, L= 2.5e9/constants.c, **kwargs):
     if tdi == 1.5:
         Cxx = 4 * np.sin(omega * L)**2
     if tdi == 2.0:
         Cxx = 16 * (np.sin(omega * L) ** 2) * (np.sin(2 * omega * L) ** 2)
     return Cxx
  
-def C_xy(omega, L):
+def C_xy(omega, L= 2.5e9/constants.c):
     return -16 * (np.sin(omega * L)) * (np.sin(2 * omega * L) ** 3)
  
 # Transfer functions fot the AE channels
  
-def TransferAE_acc(omega, L, tdi, **kwargs):
-    return 4* C_xx(omega, L, tdi) * (3 + 2 * np.cos(omega * L) + np.cos(2 * omega * L))
+def TransferAE_acc(omega, tdi, L= 2.5e9/constants.c, **kwargs):
+    return 4* C_xx(omega, tdi, L) * (3 + 2 * np.cos(omega * L) + np.cos(2 * omega * L))
  
-def TransferAE_OMS(omega, L, tdi, **kwargs):
-    return 2 * C_xx(omega, L, tdi) * (2 + np.cos(omega * L))
+def TransferAE_OMS(omega, tdi, L= 2.5e9/constants.c, **kwargs):
+    return 2 * C_xx(omega, tdi, L) * (2 + np.cos(omega * L))
  
 def S_acc(f):
     A_acc = 3 * 1e-15
@@ -38,14 +38,14 @@ def S_OMS(f):
     return S_oms
  
  
-def S_acc_AE(f, L, tdi, **kwargs):
-    return TransferAE_acc(2 * np.pi * f, L,tdi) * S_acc(f)
+def S_acc_AE(f, tdi, L= 2.5e9/constants.c, **kwargs):
+    return TransferAE_acc(2 * np.pi * f, tdi, L) * S_acc(f)
  
  
-def S_OMS_AE(f, L, tdi, **kwargs):
-    return TransferAE_OMS(2 * np.pi * f, L, tdi) * S_OMS(f)
+def S_OMS_AE(f, tdi, L= 2.5e9/constants.c, **kwargs):
+    return TransferAE_OMS(2 * np.pi * f, tdi, L) * S_OMS(f)
 
-def  S_gal(f,L):
+def  S_gal(f, L= 2.5e9/constants.c,):
     omega = 2 * np.pi * f
     A = 9e-45
     fk = 0.00113 
@@ -56,7 +56,7 @@ def  S_gal(f,L):
 
     return A*f**(-7/3)*np.exp(-f**alpha + beta*f*np.sin(k*f))*(1+np.tanh(gam*(fk-f)))
 
-def  S_gal2(f, T_obs, L, **kwargs):
+def  S_gal2(f, T_obs, L= 2.5e9/constants.c, **kwargs):
     # T_obs needs to be in yr, given in seconds for FastGB
     if T_obs > 10:
         T_obs = T_obs/ (365*24*3600)
@@ -70,7 +70,7 @@ def  S_gal2(f, T_obs, L, **kwargs):
     s2 = 4.81078093e-4
     return A * (f)**(-7/3) * np.exp(-(f/f1)**alpha) * (1+np.tanh(-(f-f_knee)/s2))
 
-def S_gal_response(f,  L, tdi, **kwargs):
+def S_gal_response(f, tdi, L= 2.5e9/constants.c, **kwargs):
     """
     Response to galactic noise for channels X,Y,Z and TDI 1.5 or 2.0
     """
@@ -83,7 +83,7 @@ def S_gal_response(f,  L, tdi, **kwargs):
     return response
 
 
-def noise_psd_AE( f, L, tdi, **kwargs):
+def noise_psd_AE( f, tdi, L= 2.5e9/constants.c, **kwargs):
     """
     LISA psd for A,E TDI channels without galactic confusion
 
@@ -95,9 +95,9 @@ def noise_psd_AE( f, L, tdi, **kwargs):
     if str(tdi) not in ["1.5", "2.0"]:
         raise ValueError("The version of TDI, currently only for 1.5 or 2.0.")
     
-    return S_acc_AE(f, L, tdi) + S_OMS_AE(f, L, tdi)
+    return S_acc_AE(f, tdi, L) + S_OMS_AE(f, tdi, L)
 
-def noise_psd_XYZ(f, L, **kwargs):
+def noise_psd_XYZ(f, L= 2.5e9/constants.c, **kwargs):
     """
     LISA psd for X,Y,Z TDI channels
 
@@ -110,11 +110,11 @@ def noise_psd_XYZ(f, L, **kwargs):
     return 2* (np.sin(omega*L))**2 *(S_OMS(f) + (3+ np.cos(2*omega*L))*S_acc(f))
 
 
-def noise_psd_AE_gal(f, L, tdi, **kwargs):
-    return noise_psd_AE(f, L, tdi) + 1.5*S_gal_response(f,L, tdi)*S_gal(f,L)
+def noise_psd_AE_gal(f, tdi, L= 2.5e9/constants.c, **kwargs):
+    return noise_psd_AE(f, tdi, L) + 1.5*S_gal_response(f, tdi, L)*S_gal(f,L)
 
 
-def noise_psd_AE_gal2(f, L, T_obs, tdi,  **kwargs):
+def noise_psd_AE_gal2(f, T_obs, tdi, L= 2.5e9/constants.c,  **kwargs):
     """
     LISA PSD for A,E TDI channel with galactic confusion noise
 
@@ -133,11 +133,11 @@ def noise_psd_AE_gal2(f, L, T_obs, tdi,  **kwargs):
     if str(tdi) not in ["1.5", "2.0"]:
         raise ValueError("The version of TDI, currently only for 1.5 or 2.0.")
     
-    return noise_psd_AE(f, L, tdi) + 1.5*S_gal_response(f,L, tdi)* S_gal2(f, T_obs, L)
+    return noise_psd_AE(f, tdi, L) + 1.5*S_gal_response(f, tdi, L)* S_gal2(f, T_obs, L)
 
 from library.sgwb_Boileau import sgwb_noise_boileau
 from pycbc.psd.analytical_space import averaged_response_lisa_tdi
-def noise_psd_AE_Boileau(f, L, tdi, model, **kwargs):
+def noise_psd_AE_Boileau(f,  tdi, model, **kwargs):
     return  1.5*averaged_response_lisa_tdi(f, tdi =tdi)* sgwb_noise_boileau(f, model)
 
 
@@ -150,3 +150,10 @@ def S_noise_approx(f):
     S_noise = 10/3 * (S_I/(2 * np.pi * f)**4 + S_II) * R
     return S_noise
 
+def S_from_h_char(h_c, f0):
+    psd = h_c**2 / f0
+    return psd
+
+def psd_source_approx(h_c, f0, tdi, L= 2.5e9/constants.c, **kwargs):
+    psd = S_from_h_char(h_c, f0) *  1.5 * S_gal_response(f0, tdi, L)
+    return psd

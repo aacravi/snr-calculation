@@ -45,14 +45,16 @@ Thumbs.db
 # ==============================
 # Specific files you want to ignore
 # ==============================
-# Insert your files below, one per line
-# Example:
-# pycbc-snr copy.ipynb
-# another_file_to_ignore.ipynb
+# Notebooks and .py files
 GW-assignment.ipynb
 pycbc-snr.ipynb
-test.py 
 Cosmic.ipynb
+test.py 
+catalog.ipynb
+iteration_loop_test.ipynb
+iteration_loop.ipynb
+
+# Other types of files
 binaries_test_1000000
 binaries_test_1000000_SNR_selection
 cosmic-inifile.ini 
@@ -61,3 +63,7 @@ log_kstar1_11_14_kstar2_11_14_SFstart_13700.0_SFduration_0.0_metallicity_0.014.t
 resolved_sources.hdf5
 resolved_sources_1000000.hdf5
 binaries_test_all_SNR_selection
+processed_all_snr001_4yrs.h5
+results_all_snr7_4yrs
+binaries_all_SNR_001_4yr
+binaries_all_SNR001_4yrs.h5

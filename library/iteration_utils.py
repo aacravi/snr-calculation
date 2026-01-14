@@ -1,0 +1,445 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from library.lisa_psd import noise_psd_AE, noise_psd_AE_gal2
+import scipy.constants as constants
+from library.snr import optimal_snr
+import h5py
+from scipy import ndimage
+
+
+def load_waveforms(filename):
+
+    with h5py.File(filename, 'r') as f:
+        n_tot = len(f['meta/f0'])
+
+        # Pre-allocate lists
+        A = [None] * n_tot
+        E = [None] * n_tot
+        fr = [None] * n_tot
+        ecl_lat = [None] * n_tot  
+        ecl_lon = [None] * n_tot
+        with_wf = np.zeros(n_tot, dtype = bool) # Track only sources with a waveform 
+
+        data = {
+        'A': A,
+        'E': E,
+        'fr': fr,
+        'source_psd_estimate': f['source_psd_estimate'][:],
+        'f0': f['meta/f0'][:],
+        'Ampl': f['meta/Ampl'][:],
+        'with_wf': with_wf,
+        'ecliptic_lat': ecl_lat,
+        'ecliptic_lon': ecl_lon,
+        'T_obs': f.attrs['T_obs']
+    }
+
+        for bucket in ['small', 'medium', 'large']:
+            grp = f[bucket]
+            idx = grp['indices'][:]
+
+            A_vals  = grp['A'][:]
+            E_vals  = grp['E'][:]
+            fr_vals = grp['fr'][:]
+            lat_vals = grp['ecliptic_lat'][:]
+            lon_vals = grp['ecliptic_lon'][:]
+
+            for j, gidx in enumerate(idx):
+                A[gidx] = A_vals[j]
+                E[gidx] = E_vals[j]
+                fr[gidx] = fr_vals[j]
+                ecl_lat[gidx] = lat_vals[j]
+                ecl_lon[gidx] = lon_vals[j]
+
+            with_wf[idx] = True
+            
+    return data
+
+
+
+def power_spectrum_calc(h, f):
+    """
+    Function to compute the power spectrum of data
+
+    Parameters
+    ----------
+    h : array_like
+        Strain data
+        
+    f : array_like
+         frequency of data
+
+    Returns
+    -------
+    psd : One-sided PSD [strain^2 / Hz]
+    """
+    h = np.asarray(h)
+    f = np.asarray(f)
+    
+    # Frequency bin width
+    df = f[1] - f[0]
+
+    psd = 2* np.abs(h)**2 *df
+
+    return psd
+
+
+def pre_excluded_conf(sources, weak_indices, global_fr):
+    """ 
+    To calculate the confusion PSD of the pre-excluded sources (from estimated PSD)
+    """
+    psd_conf = np.zeros_like(global_fr)
+
+    if len(weak_indices) == 0:
+        return psd_conf
+    
+    psd_estimates = sources['source_psd_estimate'][weak_indices]
+    f0_values = sources['f0'][weak_indices]
+
+    freq_indices = np.searchsorted(global_fr, f0_values)
+    freq_indices = np.clip(freq_indices, 0, len(global_fr) -1 )
+
+    np.add.at(psd_conf, freq_indices, psd_estimates)
+    
+    return psd_conf
+
+
+def setup(sources, snr_calculator, psd_instrumental, snr_threshold=7.0):
+    """
+    Setup for the iteration
+    
+    Parameters:
+    -----------
+    sources : dictionary with sources parameters              
+    snr_calculator : function
+    psd_instrumental : function
+    df: delta_frequency for the global grid
+    snr_threshold : float
+        SNR threshold (default is 7.0)
+        
+    Returns:
+    --------
+    state : dictionary
+        Contains all data needed for iteration
+    """
+    
+    n_sources = len(sources['f0'])
+    with_wf = sources.get('with_wf', np.ones(n_sources, dtype=bool))
+    
+    # Separate indices of sources with/without waveform
+    wf_indices = np.where(with_wf)[0]
+    weak_indices = np.where(~with_wf)[0]
+
+    # Create global frequency grid (sample sources to avoid uploading all of them at the same time)
+    # Useful for global PSD calculation
+    df = None
+    freq_min = np.inf
+    freq_max = -np.inf
+
+    for idx in wf_indices:
+        fr = sources['fr'][idx]
+        if df is None:
+            df = fr[1] - fr[0]
+        freq_min = min(freq_min, fr[0])
+        freq_max = max(freq_max, fr[-1])
+
+    global_fr = np.arange(freq_min - df, freq_max + 2*df, df)    
+
+    source_A = {}
+    source_idx_ranges = {}
+    for idx in wf_indices:
+        fr = sources['fr'][idx]
+        A  = sources['A'][idx]   # complex FD waveform
+
+        idx_start = np.searchsorted(global_fr, fr[0])
+        idx_end   = idx_start + len(fr)
+
+        source_A[idx] = A
+        source_idx_ranges[idx] = (idx_start, idx_end)
+        
+    # Calculate global PSD instr and confusion from pre-excluded sources
+    psd_instr_global = psd_instrumental(global_fr, tdi = 1.5)
+    psd_conf_preexcluded = pre_excluded_conf(sources, weak_indices, global_fr)
+    
+    state = {
+        'waveforms': sources,
+        'source_A': source_A,
+        'source_idx_ranges': source_idx_ranges,
+        'idx_unresolved': wf_indices.copy(),
+        'idx_pre_excluded': weak_indices,
+        'sources_resolved': [],
+        'psd_instr_global': psd_instr_global,
+        'psd_conf_preexcluded': psd_conf_preexcluded,
+        'calculate_snr': snr_calculator,
+        'snr_threshold': snr_threshold,
+        'iteration': 0,
+        'history': [],
+        'global_fr': global_fr,
+        'df': df,
+        'freq_min': global_fr.min(),
+        'freq_max': global_fr.max()
+    }
+    
+    return state
+
+
+def confusion_psd_from_signal(A_tot, df,  filter_size=1000):
+    """
+    Compute confusion PSD from total signal
+
+    Parameters:
+
+    A_tot: total signal in channel A
+    df: frequency resolution (1/T_obs)
+    filter_size: number of bins for the smoothing 
+
+    """
+    signal_psd = 2.0 * df * np.abs(A_tot)**2
+    #norm = 1.0 / 0.7023319615912207
+    psd_conf = ndimage.median_filter(signal_psd, size=filter_size) 
+
+    return psd_conf
+
+
+
+def separate_snr(sources, indices, psd_total_global,  global_fr, calculate_snr_function, threshold):
+    """
+    Separate sources into resolved vs unresolved based on SNR
+        
+    Returns:
+    --------
+    resolved : Resolved sources with their SNRs
+    unresolved_idx : indices of unresolved sources to use in the next iteration
+    """
+    
+    resolved = []
+    unresolved_idx = []
+    
+    for idx in indices:
+        # Get the source
+        fr = sources['fr'][idx]
+
+        idx_start = np.searchsorted(global_fr, fr[0])
+        idx_end   = idx_start + len(fr)
+
+        psd_source = psd_total_global[idx_start:idx_end]
+        source = {
+            'f0': sources['f0'][idx],
+            'fr': fr,
+            'A': sources['A'][idx],
+            'psd_total': psd_source,
+            'id': idx,
+            'ecliptic_lon':sources['ecliptic_lon'][idx],
+            'ecliptic_lat':sources['ecliptic_lat'][idx],
+        }
+
+        snr = calculate_snr_function(source)
+        
+        if snr >= threshold:
+            resolved.append({'source': source, 'snr': snr})
+        else:
+            unresolved_idx.append(idx)
+    
+    return resolved, np.array(unresolved_idx)
+
+def save_resolved_sources(output_file, resolved_sources, n_total, snr_threshold, T_obs, global_fr, psd_total):
+    """
+    Save resolved sources
+    
+    """
+    import h5py
+    
+    n_resolved = len(resolved_sources)
+    
+    f0_arr = np.array([entry['source']['f0'] for entry in resolved_sources])
+    #amp_arr = np.array([entry['source']['Ampl'] for entry in resolved_sources])
+    snr_arr = np.array([entry['snr'] for entry in resolved_sources])
+    pos_arr = np.array([
+        [entry['source'].get('ecliptic_lat', np.nan),
+        entry['source'].get('ecliptic_lon', np.nan)]
+        for entry in resolved_sources
+    ])
+
+    with h5py.File(output_file, 'w') as f:
+        
+        f.attrs['n_resolved'] = n_resolved
+        f.attrs['n_total'] = n_total
+        f.attrs['snr_threshold'] = snr_threshold
+        f.attrs['T_obs'] = T_obs
+        
+        f.create_dataset('f0', data=f0_arr)
+        #f.create_dataset('amplitude', data=amp_arr)
+        f.create_dataset('snr', data=snr_arr)
+        f.create_dataset('global_fr', data=global_fr)
+        f.create_dataset('position', data=pos_arr)
+
+        grp = f.create_group('psd_total_iter')
+
+        for iteration, psd in psd_total:
+            iter_grp = grp.create_group(f'iter_{iteration}')
+
+            iter_grp.create_dataset('psd_total', data=psd)
+
+
+        print(f"Saved {n_resolved} resolved sources to {output_file}")
+        return output_file
+    
+
+def run_iterative_separation(state,  
+                             max_iterations=100, 
+                             filter_size=100,
+                             print_progress=True,
+                             plot = True,
+                             save_results= True,
+                             output_file= 'resolved_sources.hdf5'):
+    """    
+    Parameters:
+    -----------
+    state : dictionary
+        State from setup_separation()
+    max_iterations : int
+    confusion_method : str
+        'median' or 'mean'
+    print_progress : bool
+        Print what's happening at each step
+        
+    Returns:
+    --------
+    results : dictionary
+        Final results with resolved/unresolved sources
+    Saves file with resolved sources
+    """
+
+    n_tot_sources = len(state['waveforms']['f0'])
+    n_pre_confusion = len(state['idx_pre_excluded'])
+
+    if print_progress:
+        print(f"Starting with {n_tot_sources} total sources")
+        print(f"{n_pre_confusion} sources already pre-excluded and added to the confusion")
+        print(f"{len(state["idx_unresolved"])} candidate sources to run the iteration")
+        print(f"Frequency range: {state['freq_min']:.2e} to {state['freq_max']:.2e} Hz")
+        print(f"SNR threshold: {state['snr_threshold']}")
+           
+    n_resolved_previous = len(state['sources_resolved'])
+    global_fr = state['global_fr']
+    df = global_fr[1] - global_fr[0]
+    psd_confusion_iter = [] # store total PSD (with confusion) for each iteration
+    # MAIN ITERATION LOOP
+    for iteration in range(1, max_iterations + 1):
+        
+        if print_progress:
+            print(f"\n--- Iteration {iteration} ---")
+        
+        # STEP 1: Calculate global confusion PSD
+        A_tot = np.zeros_like(state['global_fr'], dtype=np.complex128)
+
+        for idx in state['idx_unresolved']:
+            A = state['source_A'][idx]
+            i0, i1 = state['source_idx_ranges'][idx]
+            A_tot[i0:i1] += A
+
+        psd_confusion= confusion_psd_from_signal(
+            A_tot=A_tot,
+            df=state['df'],
+            filter_size=filter_size
+        )
+
+        psd_instr=state['psd_instr_global']
+
+        #psd_confusion_global = psd_confusion
+        psd_confusion_global = (
+            psd_confusion +
+            state['psd_conf_preexcluded']
+        )
+        
+        psd_total_global = psd_confusion_global + psd_instr
+        psd_confusion_iter.append((iteration, psd_total_global))
+
+        if plot:
+            print(f"Size of the binning for the median filter: {filter_size*df}")
+            plt.loglog(global_fr, psd_instr, color = 'black', label="Instrumental PSD")
+            #plt.loglog(global_fr, state['psd_conf_preexcluded'], color = 'orange', alpha = 0.7, label ='confusion pre-excluded')
+            plt.loglog(global_fr, psd_confusion_global, color = 'red', alpha = 0.5, label='Confusion unresolved')
+            plt.loglog(global_fr, psd_total_global, color ='teal', alpha = 0.7 ,label="Confusion + instr PSD")
+            #plt.ylim(1e-48, 1e-37)
+            plt.title(f"Iteration {iteration}, filter size {filter_size}, bin size {(filter_size*df):.2e}")
+            plt.grid(alpha=0.3)
+            plt.legend()
+            plt.show()
+        
+        # STEP 2: Separate sources with updated confusion
+        resolved_new, unresolved_idx = separate_snr(
+            state['waveforms'],
+            state['idx_unresolved'],
+            psd_total_global,
+            state['global_fr'],
+            state['calculate_snr'],
+            state['snr_threshold']
+        )
+        
+        # STEP 3: Update state 
+        state['sources_resolved'].extend(resolved_new)
+        state['idx_unresolved'] = unresolved_idx
+        
+        n_resolved_now = len(state['sources_resolved'])
+        
+        state['history'].append({
+            'iteration': iteration,
+            'n_resolved_this_step': len(resolved_new),
+            'n_unresolved_remaining': len(state['idx_unresolved']),
+            'n_resolved_total': n_resolved_now
+        })
+        
+        if print_progress:
+            print(f"  New resolved: {len(resolved_new)}")
+            print(f"  Still unresolved: {len(state['idx_unresolved'])}")
+            print(f"  Total resolved: {n_resolved_now}")
+        
+        # STEP 4: Check convergence
+        n_newly_resolved = n_resolved_now - n_resolved_previous
+        
+        if n_newly_resolved == 0:
+            if print_progress:
+                print(f"\nConverged after {iteration} iterations!")
+            break
+        
+        n_resolved_previous = n_resolved_now
+    
+    else:
+        if print_progress:
+            print(f"\nReached maximum iterations ({max_iterations})")
+    
+    results = {
+        'resolved_sources': state['sources_resolved'],
+        'global_fr': global_fr,
+        'psd_confusion': psd_confusion_iter,
+        'unresolved_indices': state['idx_unresolved'],
+        'n_resolved': len(state['sources_resolved']),
+        'n_unresolved': len(state['idx_unresolved']),
+        'iterations': iteration,
+        'history': state['history']
+    }
+    
+    if print_progress:
+        print("\n" + "=" * 60)
+        print("FINAL RESULTS:")
+        print(f"  Total sources: {n_tot_sources}")
+        print(f"  Resolved: {results['n_resolved']} ({results['n_resolved']/n_tot_sources*100:.1f}%)")
+        print(f"  Unresolved: {n_tot_sources-results['n_resolved']} ({100 - results['n_resolved']/n_tot_sources*100:.1f}%)")
+        print("=" * 60)
+    
+    if save_results:
+        if print_progress:
+            print(f"\nSaving resolved sources to {output_file}...")
+        
+        save_resolved_sources(
+            output_file,
+            state['sources_resolved'],
+            n_tot_sources,
+            state['snr_threshold'],
+            state.get('T_obs', state['waveforms'].get('T_obs', 0)),
+            global_fr,
+            psd_confusion_iter
+        )
+        
+    
+    return results
