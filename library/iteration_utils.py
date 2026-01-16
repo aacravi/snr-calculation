@@ -82,8 +82,10 @@ def power_spectrum_calc(h, f):
 
     return psd
 
+from scipy.ndimage import gaussian_filter1d
 
-def pre_excluded_conf(sources, weak_indices, global_fr):
+
+def pre_excluded_conf(sources, weak_indices, global_fr, filter_size=1000):
     """ 
     To calculate the confusion PSD of the pre-excluded sources (from estimated PSD)
     """
@@ -99,11 +101,13 @@ def pre_excluded_conf(sources, weak_indices, global_fr):
     freq_indices = np.clip(freq_indices, 0, len(global_fr) -1 )
 
     np.add.at(psd_conf, freq_indices, psd_estimates)
+
+    psd_conf_smooth = gaussian_filter1d(psd_conf, sigma=filter_size/2.355/2)
     
-    return psd_conf
+    return psd_conf_smooth
 
 
-def setup(sources, snr_calculator, psd_instrumental, snr_threshold=7.0):
+def setup(sources, snr_calculator, psd_instrumental, snr_threshold=7.0, filter_size=1000):
     """
     Setup for the iteration
     
@@ -158,7 +162,7 @@ def setup(sources, snr_calculator, psd_instrumental, snr_threshold=7.0):
         
     # Calculate global PSD instr and confusion from pre-excluded sources
     psd_instr_global = psd_instrumental(global_fr, tdi = 1.5)
-    psd_conf_preexcluded = pre_excluded_conf(sources, weak_indices, global_fr)
+    psd_conf_preexcluded = pre_excluded_conf(sources, weak_indices, global_fr, filter_size=1000)
     
     state = {
         'waveforms': sources,
@@ -167,6 +171,8 @@ def setup(sources, snr_calculator, psd_instrumental, snr_threshold=7.0):
         'idx_unresolved': wf_indices.copy(),
         'idx_pre_excluded': weak_indices,
         'sources_resolved': [],
+        'idx_confusion_only': [],
+        'idx_snr_candidates' : wf_indices.copy(),
         'psd_instr_global': psd_instr_global,
         'psd_conf_preexcluded': psd_conf_preexcluded,
         'calculate_snr': snr_calculator,
@@ -286,7 +292,7 @@ def save_resolved_sources(output_file, resolved_sources, n_total, snr_threshold,
 
 def run_iterative_separation(state,  
                              max_iterations=100, 
-                             filter_size=100,
+                             filter_size=1000,
                              print_progress=True,
                              plot = True,
                              save_results= True,
@@ -323,6 +329,28 @@ def run_iterative_separation(state,
     global_fr = state['global_fr']
     df = global_fr[1] - global_fr[0]
     psd_confusion_iter = [] # store total PSD (with confusion) for each iteration
+
+    # STEP 0: Instrument-only SNR to exclude unresolvable sources
+    snr_candidates, unresolved_instr = separate_snr(
+        state['waveforms'],
+        state['idx_unresolved'],
+        state['psd_instr_global'],   # <-- instrument only
+        state['global_fr'],
+        state['calculate_snr'],
+        state['snr_threshold']/2
+    )
+
+    state['idx_unresolved'] = [r['source']['id'] for r in snr_candidates]
+    state['idx_confusion_only'] = list(unresolved_instr)
+    state['idx_unresolved'] = list(state['idx_unresolved'])
+    state['idx_confusion_only'] = list(state['idx_confusion_only'])
+
+
+    if print_progress:
+        print("\n--- Step 0: Instrument-only SNR pre-exclusion")
+        print(f"  Unresolvable sources (added to confusion): {len(state['idx_confusion_only'])}")
+        print(f"  SNR candidates for iteration: {len(snr_candidates)}")
+
     # MAIN ITERATION LOOP
     for iteration in range(1, max_iterations + 1):
         
@@ -332,7 +360,12 @@ def run_iterative_separation(state,
         # STEP 1: Calculate global confusion PSD
         A_tot = np.zeros_like(state['global_fr'], dtype=np.complex128)
 
-        for idx in state['idx_unresolved']:
+        confusion_idx = (
+        list(state['idx_unresolved']) +
+        list(state['idx_confusion_only'])
+    )
+
+        for idx in confusion_idx:
             A = state['source_A'][idx]
             i0, i1 = state['source_idx_ranges'][idx]
             A_tot[i0:i1] += A
@@ -441,5 +474,4 @@ def run_iterative_separation(state,
             psd_confusion_iter
         )
         
-    
     return results
