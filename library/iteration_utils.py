@@ -5,6 +5,7 @@ import scipy.constants as constants
 from library.snr import optimal_snr
 import h5py
 from scipy import ndimage
+from pathlib import Path
 
 
 def load_waveforms(filename):
@@ -27,6 +28,7 @@ def load_waveforms(filename):
         'source_psd_estimate': f['source_psd_estimate'][:],
         'f0': f['meta/f0'][:],
         'Ampl': f['meta/Ampl'][:],
+        'fdot': f['meta/fdot'][:],
         'with_wf': with_wf,
         'ecliptic_lat': ecl_lat,
         'ecliptic_lon': ecl_lon,
@@ -133,8 +135,7 @@ def setup(sources, snr_calculator, psd_instrumental, snr_threshold=7.0, filter_s
     wf_indices = np.where(with_wf)[0]
     weak_indices = np.where(~with_wf)[0]
 
-    # Create global frequency grid (sample sources to avoid uploading all of them at the same time)
-    # Useful for global PSD calculation
+    # Create global frequency grid (useful for global PSD calculation)
     df = None
     freq_min = np.inf
     freq_max = -np.inf
@@ -221,7 +222,6 @@ def separate_snr(sources, indices, psd_total_global,  global_fr, calculate_snr_f
     unresolved_idx = []
     
     for idx in indices:
-        # Get the source
         fr = sources['fr'][idx]
 
         idx_start = np.searchsorted(global_fr, fr[0])
@@ -230,6 +230,8 @@ def separate_snr(sources, indices, psd_total_global,  global_fr, calculate_snr_f
         psd_source = psd_total_global[idx_start:idx_end]
         source = {
             'f0': sources['f0'][idx],
+            'fdot': sources['fdot'][idx],
+            'Ampl': sources['Ampl'][idx],
             'fr': fr,
             'A': sources['A'][idx],
             'psd_total': psd_source,
@@ -247,48 +249,50 @@ def separate_snr(sources, indices, psd_total_global,  global_fr, calculate_snr_f
     
     return resolved, np.array(unresolved_idx)
 
-def save_resolved_sources(output_file, resolved_sources, n_total, snr_threshold, T_obs, global_fr, psd_total):
-    """
-    Save resolved sources
-    
-    """
-    import h5py
-    
-    n_resolved = len(resolved_sources)
-    
-    f0_arr = np.array([entry['source']['f0'] for entry in resolved_sources])
-    #amp_arr = np.array([entry['source']['Ampl'] for entry in resolved_sources])
-    snr_arr = np.array([entry['snr'] for entry in resolved_sources])
-    pos_arr = np.array([
-        [entry['source'].get('ecliptic_lat', np.nan),
-        entry['source'].get('ecliptic_lon', np.nan)]
-        for entry in resolved_sources
-    ])
+def save_results_h5(output_file, results, state):
+    with h5py.File(output_file, "w") as f:
 
-    with h5py.File(output_file, 'w') as f:
-        
-        f.attrs['n_resolved'] = n_resolved
-        f.attrs['n_total'] = n_total
-        f.attrs['snr_threshold'] = snr_threshold
-        f.attrs['T_obs'] = T_obs
-        
-        f.create_dataset('f0', data=f0_arr)
-        #f.create_dataset('amplitude', data=amp_arr)
-        f.create_dataset('snr', data=snr_arr)
-        f.create_dataset('global_fr', data=global_fr)
-        f.create_dataset('position', data=pos_arr)
+        f.attrs["T_obs"] = state.get("T_obs", state["waveforms"].get("T_obs", 0))
+        f.attrs["snr_threshold"] = state["snr_threshold"]
+        f.attrs["n_total_sources"] = len(state["waveforms"]["f0"])
+        f.attrs["iterations"] = results["iterations"]
 
-        grp = f.create_group('psd_total_iter')
+        f.create_dataset("global_fr", data=results["global_fr"])
 
-        for iteration, psd in psd_total:
-            iter_grp = grp.create_group(f'iter_{iteration}')
+        grp = f.create_group("resolved_sources")
 
-            iter_grp.create_dataset('psd_total', data=psd)
+        for i, r in enumerate(results["resolved_sources"]):
+            src = r["source"]
+            g = grp.create_group(f"source_{i}")
 
+            g.attrs["id"] = src["id"]
+            g.attrs["f0"] = src["f0"]
+            g.attrs["fdot"] = src["fdot"]
+            g.attrs["Ampl"] = src["Ampl"]
+            g.attrs["snr"] = r["snr"]
+            g.attrs["ecliptic_lat"] = src.get("ecliptic_lat", np.nan)
+            g.attrs["ecliptic_lon"] = src.get("ecliptic_lon", np.nan)
 
-        print(f"Saved {n_resolved} resolved sources to {output_file}")
-        return output_file
-    
+            g.create_dataset("A", data=src["A"])
+            g.create_dataset("fr", data=src["fr"])
+            
+        grp_psd = f.create_group("psd_confusion")
+
+        for iteration, psd in results["psd_confusion"]:
+            g = grp_psd.create_group(f"iter_{iteration}")
+            g.create_dataset("psd_total", data=psd)
+
+        f.create_dataset("unresolved_indices", data=np.array(results["unresolved_indices"], dtype=int))
+
+        hist = results["history"]
+        grp_hist = f.create_group("history")
+        grp_hist.create_dataset("iteration", data=[h["iteration"] for h in hist])
+        grp_hist.create_dataset( "n_resolved_this_step",  data=[h["n_resolved_this_step"] for h in hist])
+        grp_hist.create_dataset("n_unresolved_remaining", data=[h["n_unresolved_remaining"] for h in hist])
+        grp_hist.create_dataset( "n_resolved_total",data=[h["n_resolved_total"] for h in hist])
+
+    print(f"Results saved to {output_file}")
+
 
 def run_iterative_separation(state,  
                              max_iterations=100, 
@@ -334,7 +338,7 @@ def run_iterative_separation(state,
     snr_candidates, unresolved_instr = separate_snr(
         state['waveforms'],
         state['idx_unresolved'],
-        state['psd_instr_global'],   # <-- instrument only
+        state['psd_instr_global'],   
         state['global_fr'],
         state['calculate_snr'],
         state['snr_threshold']/2
@@ -344,7 +348,6 @@ def run_iterative_separation(state,
     state['idx_confusion_only'] = list(unresolved_instr)
     state['idx_unresolved'] = list(state['idx_unresolved'])
     state['idx_confusion_only'] = list(state['idx_confusion_only'])
-
 
     if print_progress:
         print("\n--- Step 0: Instrument-only SNR pre-exclusion")
@@ -361,9 +364,9 @@ def run_iterative_separation(state,
         A_tot = np.zeros_like(state['global_fr'], dtype=np.complex128)
 
         confusion_idx = (
-        list(state['idx_unresolved']) +
-        list(state['idx_confusion_only'])
-    )
+            list(state['idx_unresolved']) +
+            list(state['idx_confusion_only'])
+            )
 
         for idx in confusion_idx:
             A = state['source_A'][idx]
@@ -460,18 +463,15 @@ def run_iterative_separation(state,
         print(f"  Unresolved: {n_tot_sources-results['n_resolved']} ({100 - results['n_resolved']/n_tot_sources*100:.1f}%)")
         print("=" * 60)
     
+
     if save_results:
+        results_dir = Path("results")
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        output_path = results_dir / output_file
         if print_progress:
-            print(f"\nSaving resolved sources to {output_file}...")
+            print(f"\nSaving resolved sources to results/{output_file}...")
         
-        save_resolved_sources(
-            output_file,
-            state['sources_resolved'],
-            n_tot_sources,
-            state['snr_threshold'],
-            state.get('T_obs', state['waveforms'].get('T_obs', 0)),
-            global_fr,
-            psd_confusion_iter
-        )
-        
+        save_results_h5(output_path, results, state)
+
     return results
