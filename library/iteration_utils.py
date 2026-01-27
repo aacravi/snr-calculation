@@ -109,7 +109,7 @@ def pre_excluded_conf(sources, weak_indices, global_fr, filter_size=1000):
     return psd_conf_smooth
 
 
-def setup(sources, snr_calculator, psd_instrumental, snr_threshold=7.0, filter_size=1000):
+def setup(sources, snr_calculator, psd_instrumental, snr_threshold=7.0, tdi=1.5,  filter_size=1000):
     """
     Setup for the iteration
     
@@ -150,24 +150,28 @@ def setup(sources, snr_calculator, psd_instrumental, snr_threshold=7.0, filter_s
     global_fr = np.arange(freq_min - df, freq_max + 2*df, df)    
 
     source_A = {}
+    source_E = {}
     source_idx_ranges = {}
     for idx in wf_indices:
         fr = sources['fr'][idx]
         A  = sources['A'][idx]   # complex FD waveform
+        E = sources['E'][idx]
 
         idx_start = np.searchsorted(global_fr, fr[0])
         idx_end   = idx_start + len(fr)
 
         source_A[idx] = A
+        source_E[idx] = E
         source_idx_ranges[idx] = (idx_start, idx_end)
         
     # Calculate global PSD instr and confusion from pre-excluded sources
-    psd_instr_global = psd_instrumental(global_fr, tdi = 1.5)
+    psd_instr_global = psd_instrumental(global_fr, tdi=tdi)
     psd_conf_preexcluded = pre_excluded_conf(sources, weak_indices, global_fr, filter_size=1000)
     
     state = {
         'waveforms': sources,
         'source_A': source_A,
+        'source_E':source_E,
         'source_idx_ranges': source_idx_ranges,
         'idx_unresolved': wf_indices.copy(),
         'idx_pre_excluded': weak_indices,
@@ -195,7 +199,7 @@ def confusion_psd_from_signal(A_tot, df,  filter_size=1000):
 
     Parameters:
 
-    A_tot: total signal in channel A
+    A_tot: total signal 
     df: frequency resolution (1/T_obs)
     filter_size: number of bins for the smoothing 
 
@@ -205,7 +209,6 @@ def confusion_psd_from_signal(A_tot, df,  filter_size=1000):
     psd_conf = ndimage.median_filter(signal_psd, size=filter_size) 
 
     return psd_conf
-
 
 
 def separate_snr(sources, indices, psd_total_global,  global_fr, calculate_snr_function, threshold):
@@ -234,6 +237,7 @@ def separate_snr(sources, indices, psd_total_global,  global_fr, calculate_snr_f
             'Ampl': sources['Ampl'][idx],
             'fr': fr,
             'A': sources['A'][idx],
+            'E':sources['E'][idx],
             'psd_total': psd_source,
             'id': idx,
             'ecliptic_lon':sources['ecliptic_lon'][idx],
@@ -274,6 +278,7 @@ def save_results_h5(output_file, results, state):
             g.attrs["ecliptic_lon"] = src.get("ecliptic_lon", np.nan)
 
             g.create_dataset("A", data=src["A"])
+            g.create_dataset("E", data=src["E"])
             g.create_dataset("fr", data=src["fr"])
             
         grp_psd = f.create_group("psd_confusion")
@@ -362,6 +367,7 @@ def run_iterative_separation(state,
         
         # STEP 1: Calculate global confusion PSD
         A_tot = np.zeros_like(state['global_fr'], dtype=np.complex128)
+        E_tot = np.zeros_like(state['global_fr'], dtype=np.complex128)
 
         confusion_idx = (
             list(state['idx_unresolved']) +
@@ -372,9 +378,12 @@ def run_iterative_separation(state,
             A = state['source_A'][idx]
             i0, i1 = state['source_idx_ranges'][idx]
             A_tot[i0:i1] += A
+            E = state['source_E'][idx]
+            i0, i1 = state['source_idx_ranges'][idx]
+            E_tot[i0:i1] += E
 
         psd_confusion= confusion_psd_from_signal(
-            A_tot=A_tot,
+            A_tot=(A_tot**2 + E_tot**2)**(1/2),
             df=state['df'],
             filter_size=filter_size
         )

@@ -13,7 +13,7 @@ def characteristic_strain(T_obs, f0, Amp):
     return h_c
 
 
-def process_catalog_batches(catalog, T_obs, delta_t, tdi,  batch_size, output_file = 'galactic_binaries_waveforms.hdf5', snr_preselection = 0.05, verbose=True):
+def process_catalog_batches(catalog, T_obs, delta_t, tdi,  batch_size, output_file = 'galactic_binaries_waveforms.hdf5', snr_preselection = 0.001, verbose=True):
     """
     Function to process the catalog in batches
 
@@ -38,9 +38,9 @@ def process_catalog_batches(catalog, T_obs, delta_t, tdi,  batch_size, output_fi
     
     # Create different N values to assign depending on the required N (depends on the fdot)
     N_values = {
-    "small": 8,
-    "medium": 32,
-    "large": 128
+    "small": 64,
+    "medium": 256,
+    "large": 4096
     }
     bucket_items = list(N_values.items())
 
@@ -109,14 +109,13 @@ def process_catalog_batches(catalog, T_obs, delta_t, tdi,  batch_size, output_fi
             loud_sources_mask = SNR_approx > snr_preselection
                 
             # Assign N based on fdot to compute the waveform with FastGB for the loud sources
-            delta_f = np.maximum(1 / T_obs, np.abs(fdot) * T_obs)
-            required_bins = delta_f * T_obs   
+            required_bins = np.abs(fdot) * T_obs**2  
 
             bucket = np.full(len(f0),'skip', dtype='U10') # initialize the bukcets with all skip
 
-            bucket[(required_bins < 9) & loud_sources_mask] = "small"
-            bucket[(required_bins >= 9) & (required_bins < 33) & loud_sources_mask] = "medium"
-            bucket[(required_bins >= 33) & loud_sources_mask] = "large"
+            bucket[(required_bins < 1e3) & loud_sources_mask] = "small"
+            bucket[(required_bins >= 1e3) & (required_bins < 1e4) & loud_sources_mask] = "medium"
+            bucket[(required_bins >= 1e4) & loud_sources_mask] = "large"
 
             # process each bucket individually
             for bname, N in N_values.items():
@@ -132,7 +131,8 @@ def process_catalog_batches(catalog, T_obs, delta_t, tdi,  batch_size, output_fi
                     params_sub,
                     delta_t=delta_t,
                     T_obs=T_obs,
-                    N=N
+                    N=N,
+                    tdi=tdi
                 )
                 # Save position for sources with waveform
                 ecliptic_lat_sub = params_sub[:,3] 

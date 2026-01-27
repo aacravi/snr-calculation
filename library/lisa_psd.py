@@ -61,13 +61,13 @@ def  S_gal2(f, T_obs, L= 2.5e9/constants.c, **kwargs):
     if T_obs > 10:
         T_obs = T_obs/ (365*24*3600)
     omega = 2*np.pi*f
-    A = 1.28265531e-44
-    log_f_knee = -0.360976122*np.log10(T_obs)-2.37822436
-    log_f1 = -0.223499956*np.log10(T_obs) -2.70408439
-    alpha = 1.62966700
+    A = 1.15e-44
+    log_f_knee = -0.37*np.log10(T_obs)-2.49
+    log_f1 = -0.15*np.log10(T_obs) -2.72
+    alpha = 1.56
     f1 = 10**log_f1
     f_knee = 10**log_f_knee
-    s2 = 4.81078093e-4
+    s2 = 0.00067
     return A * (f)**(-7/3) * np.exp(-(f/f1)**alpha) * (1+np.tanh(-(f-f_knee)/s2))
 
 def S_gal_response(f, tdi, L= 2.5e9/constants.c, **kwargs):
