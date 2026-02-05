@@ -102,3 +102,8 @@ def approx_snr(h_c , f):
     S_noise = S_noise_approx(f)
     SNR = h_c /(f* S_noise)**(1/2)
     return SNR
+
+
+def optimal_snr_AE(A, E, psd,  T_obs, **kwargs):
+    snr = (optimal_snr_squared(A, psd, T_obs) + optimal_snr_squared(E, psd, T_obs))**(1/2)
+    return snr

@@ -38,9 +38,9 @@ def process_catalog_batches(catalog, T_obs, delta_t, tdi,  batch_size, output_fi
     
     # Create different N values to assign depending on the required N (depends on the fdot)
     N_values = {
-    "small": 64,
-    "medium": 256,
-    "large": 4096
+    "small": 128,
+    "medium": 512,
+    "large": 2048
     }
     bucket_items = list(N_values.items())
 
@@ -113,9 +113,9 @@ def process_catalog_batches(catalog, T_obs, delta_t, tdi,  batch_size, output_fi
 
             bucket = np.full(len(f0),'skip', dtype='U10') # initialize the bukcets with all skip
 
-            bucket[(required_bins < 1e3) & loud_sources_mask] = "small"
-            bucket[(required_bins >= 1e3) & (required_bins < 1e4) & loud_sources_mask] = "medium"
-            bucket[(required_bins >= 1e4) & loud_sources_mask] = "large"
+            bucket[(required_bins < 1e2) & loud_sources_mask] = "small"
+            bucket[(required_bins >= 1e2) & (required_bins < 1e3) & loud_sources_mask] = "medium"
+            bucket[(required_bins >= 1e3) & loud_sources_mask] = "large"
 
             # process each bucket individually
             for bname, N in N_values.items():

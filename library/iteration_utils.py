@@ -199,12 +199,12 @@ def confusion_psd_from_signal(A_tot, df,  filter_size=1000):
 
     Parameters:
 
-    A_tot: total signal 
+    A_tot: total signal of  channel A=channel E 
     df: frequency resolution (1/T_obs)
     filter_size: number of bins for the smoothing 
 
     """
-    signal_psd = 2.0 * df * np.abs(A_tot)**2
+    signal_psd = 2.0 * df * np.abs(A_tot**2)
     #norm = 1.0 / 0.7023319615912207
     psd_conf = ndimage.median_filter(signal_psd, size=filter_size) 
 
@@ -378,12 +378,10 @@ def run_iterative_separation(state,
             A = state['source_A'][idx]
             i0, i1 = state['source_idx_ranges'][idx]
             A_tot[i0:i1] += A
-            E = state['source_E'][idx]
-            i0, i1 = state['source_idx_ranges'][idx]
-            E_tot[i0:i1] += E
+
 
         psd_confusion= confusion_psd_from_signal(
-            A_tot=(A_tot**2 + E_tot**2)**(1/2),
+            A_tot=A_tot,
             df=state['df'],
             filter_size=filter_size
         )
