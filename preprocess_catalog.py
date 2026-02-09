@@ -68,11 +68,13 @@ if __name__ == "__main__":
     parser.add_argument("--tdi", type=float, default=1.5, help="TDI scaling factor")
     parser.add_argument("--snr_preselection", type=float, default=0.01, help="SNR preselection threshold")
     parser.add_argument("--batch_size", type=int, default=1000, help="Batch size for processing")
+    parser.add_argument("--keys", nargs="+", default=None, help="List of catalog keys to load (space-separated). If not provided, default keys are used.")
 
     args = parser.parse_args()
     
     preprocess_catalog(args.filepath,
                        args.output,
+                       keys=args.keys,
                        T_obs=args.T_obs,
                        delta_t=args.delta_t,
                        tdi=args.tdi,
