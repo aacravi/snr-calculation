@@ -137,6 +137,7 @@ def noise_psd_AE_gal2(f, T_obs, tdi, L= 2.5e9/constants.c,  **kwargs):
 
 from library.sgwb_Boileau import sgwb_noise_boileau
 from pycbc.psd.analytical_space import averaged_response_lisa_tdi
+
 def noise_psd_AE_Boileau(f,  tdi, model, **kwargs):
     return  1.5*averaged_response_lisa_tdi(f, tdi =tdi)* sgwb_noise_boileau(f, model)
 
@@ -157,3 +158,33 @@ def S_from_h_char(h_c, f0):
 def psd_source_approx(h_c, f0, tdi, L= 2.5e9/constants.c, **kwargs):
     psd = S_from_h_char(h_c, f0) *  1.5 * S_gal_response(f0, tdi, L)
     return psd
+
+
+def noise_psd_AE_instr_extragal(f, tdi, model="Strolger alpha4", L=2.5e9/constants.c, **kwargs):
+    """
+    Returns instrumental PSD + an extragalactic model from Boileau et al.
+
+    Possible models: 'Madau Dickinson alpha4', 'Madau Fragos default', 'Strolger alpha4'
+    """
+    psd_instr = noise_psd_AE(f, tdi, L) 
+    extragal= noise_psd_AE_Boileau(f, tdi, model)
+    return psd_instr + extragal
+
+
+def gal_model_AE(freqs, T_obs, A, alpha, a1, b1, f2, ak, bk, tdi=2.0, L = 2.5e9/constants.c ):
+    """
+    Galactic model for fitting a psd for A and E channels and sum it to the instrumental psd
+
+    Returns: galactic confusion + instrumental noise
+    """
+    logfk = ak* np.log10(T_obs) + bk
+    logf1 = a1 * np.log10(T_obs) + b1
+    fk = 10**logfk
+    f1 = 10**logf1
+    S_gal = A * freqs**(-7/3) * np.exp(-(freqs/f1)**alpha) * (1 + np.tanh(- (freqs-fk)/f2))
+    Resp = 2 * (2 * np.pi * freqs * L)**2 * np.sin(2* np.pi* freqs * L)**2 
+    tdi2_factor = 4*np.sin(2*2*np.pi*freqs*L)**2
+    psd_gal = 1.5* Resp * S_gal * tdi2_factor
+    psd_gal += noise_psd_AE(freqs, tdi=tdi)
+
+    return psd_gal

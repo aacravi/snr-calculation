@@ -105,5 +105,5 @@ def approx_snr(h_c , f):
 
 
 def optimal_snr_AE(A, E, psd,  T_obs, **kwargs):
-    snr = (optimal_snr_squared(A, psd, T_obs) + optimal_snr_squared(E, psd, T_obs))**(1/2)
+    snr = (optimal_snr_squared(A, psd, T_obs).real + optimal_snr_squared(E, psd, T_obs).real)**(1/2)
     return snr
