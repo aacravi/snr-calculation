@@ -52,6 +52,7 @@ def process_catalog_batches(catalog, T_obs, delta_t, tdi,  batch_size, output_fi
         meta_f0 = meta.create_dataset('f0', shape=(n_tot,), dtype='float64')
         meta_fdot = meta.create_dataset('fdot', shape=(n_tot,), dtype='float64')
         meta_ampl = meta.create_dataset('Ampl', shape=(n_tot,), dtype='float64')
+        meta_dist = meta.create_dataset('lum_dist', shape=(n_tot,), dtype='float64')
         
 
         psd_est = f.create_dataset('source_psd_estimate', shape=(n_tot,), dtype='float64')
@@ -94,6 +95,7 @@ def process_catalog_batches(catalog, T_obs, delta_t, tdi,  batch_size, output_fi
             meta_f0[start_idx:end_idx] = batch_params[:, 0]
             meta_fdot[start_idx:end_idx] = batch_params[:, 1]
             meta_ampl[start_idx:end_idx] = batch_params[:, 2]
+            meta_dist[start_idx:end_idx] = catalog['LuminosityDistance'][start_idx:end_idx]
             
             # Rough estimation of the SNR of sources to avoid computing the waveform of already weak sources
             # For weak sources, compute the estimated PSD and store it (it will contribute to the background)

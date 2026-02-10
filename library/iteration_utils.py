@@ -8,10 +8,17 @@ from scipy import ndimage
 from pathlib import Path
 
 
-def load_waveforms(filename):
+def load_waveforms(filename, distance_cut=None):
 
     with h5py.File(filename, 'r') as f:
         n_tot = len(f['meta/f0'])
+
+        dist = f['meta/lum_dist'][:] * 1000
+
+        if distance_cut is None:
+            keep = np.ones(n_tot, dtype=bool)
+        else:
+            keep = dist <= distance_cut
 
         # Pre-allocate lists
         A = [None] * n_tot
@@ -20,20 +27,6 @@ def load_waveforms(filename):
         ecl_lat = [None] * n_tot  
         ecl_lon = [None] * n_tot
         with_wf = np.zeros(n_tot, dtype = bool) # Track only sources with a waveform 
-
-        data = {
-        'A': A,
-        'E': E,
-        'fr': fr,
-        'source_psd_estimate': f['source_psd_estimate'][:],
-        'f0': f['meta/f0'][:],
-        'Ampl': f['meta/Ampl'][:],
-        'fdot': f['meta/fdot'][:],
-        'with_wf': with_wf,
-        'ecliptic_lat': ecl_lat,
-        'ecliptic_lon': ecl_lon,
-        'T_obs': f.attrs['T_obs']
-    }
 
         for bucket in ['small', 'medium', 'large']:
             grp = f[bucket]
@@ -46,14 +39,31 @@ def load_waveforms(filename):
             lon_vals = grp['ecliptic_lon'][:]
 
             for j, gidx in enumerate(idx):
+                if not keep[gidx]:
+                    continue
+
                 A[gidx] = A_vals[j]
                 E[gidx] = E_vals[j]
                 fr[gidx] = fr_vals[j]
                 ecl_lat[gidx] = lat_vals[j]
                 ecl_lon[gidx] = lon_vals[j]
+                with_wf[idx] = True
 
-            with_wf[idx] = True
-            
+        data = {
+            'A': A,
+            'E': E,
+            'fr': fr,
+            'source_psd_estimate': f['source_psd_estimate'][:],
+            'f0': f['meta/f0'][:],
+            'Ampl': f['meta/Ampl'][:],
+            'fdot': f['meta/fdot'][:],
+            'with_wf': with_wf,
+            'ecliptic_lat': ecl_lat,
+            'ecliptic_lon': ecl_lon,
+            'lum_dist': f['meta/lum_dist'][:] * 1000,
+            'T_obs': f.attrs['T_obs']
+        }
+                
     return data
 
 
