@@ -17,8 +17,7 @@ def preprocess_catalog(filepath, output_filename,
     if keys is None:
         keys = ["GW22FrequencySourceFrame", "GW22FrequencyDerivativeSourceFrame",
                 "Amplitude", "Declination", "RightAscension", "PolarisationAngle",
-                "InclinationAngle", "SecondaryMassSSBFrame", "PrimaryMassSSBFrame",
-                "TotalMassSSBFrame"]
+                "InclinationAngle"]#, "SecondaryMassSSBFrame", "PrimaryMassSSBFrame", "TotalMassSSBFrame"]
 
     # Load catalog
     with h5py.File(filepath, "r") as f:
