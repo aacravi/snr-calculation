@@ -264,6 +264,7 @@ def separate_snr(sources, indices, psd_total_global,  global_fr, calculate_snr_f
             'local_idx': idx,
             'ecliptic_lon':sources['ecliptic_lon'][idx],
             'ecliptic_lat':sources['ecliptic_lat'][idx],
+            'lum_dist': sources['lum_dist'][idx]
         }
 
         snr = calculate_snr_function(source)
@@ -285,6 +286,8 @@ def save_results_h5(output_file, results, state):
 
         f.create_dataset("global_fr", data=results["global_fr"])
 
+        f.create_dataset("resolved_global_indices", data=results["resolved_global_indices"])
+
         grp = f.create_group("resolved_sources")
 
         for i, r in enumerate(results["resolved_sources"]):
@@ -298,6 +301,7 @@ def save_results_h5(output_file, results, state):
             g.attrs["snr"] = r["snr"]
             g.attrs["ecliptic_lat"] = src.get("ecliptic_lat", np.nan)
             g.attrs["ecliptic_lon"] = src.get("ecliptic_lon", np.nan)
+            g.attrs["lum_dist"] = src.get("lum_dist", np.nan)
 
             g.create_dataset("A", data=src["A"])
             g.create_dataset("E", data=src["E"])
@@ -308,8 +312,6 @@ def save_results_h5(output_file, results, state):
         for iteration, psd in results["psd_confusion"]:
             g = grp_psd.create_group(f"iter_{iteration}")
             g.create_dataset("psd_total", data=psd)
-
-        f.create_dataset("unresolved_indices", data=np.array(results["unresolved_indices"], dtype=int))
 
         hist = results["history"]
         grp_hist = f.create_group("history")
