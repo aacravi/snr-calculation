@@ -20,13 +20,21 @@ def load_waveforms(filename, distance_cut=None):
         else:
             keep = dist <= distance_cut
 
+        ids_keep = np.where(keep)[0]
+        n_keep = len(ids_keep)
+
+        global_id = ids_keep.copy() # keep original indices to identify sources in the full catalog
+
         # Pre-allocate lists
-        A = [None] * n_tot
-        E = [None] * n_tot
-        fr = [None] * n_tot
-        ecl_lat = [None] * n_tot  
-        ecl_lon = [None] * n_tot
-        with_wf = np.zeros(n_tot, dtype = bool) # Track only sources with a waveform 
+        A = [None] * n_keep
+        E = [None] * n_keep
+        fr = [None] * n_keep
+        ecl_lat = [None] * n_keep  
+        ecl_lon = [None] * n_keep
+        with_wf = np.zeros(n_keep, dtype = bool) # Track only sources with a waveform 
+
+        old_to_new = -np.ones(n_tot, dtype=int)
+        old_to_new[ids_keep] = np.arange(n_keep)
 
         for bucket in ['small', 'medium', 'large']:
             grp = f[bucket]
@@ -39,28 +47,31 @@ def load_waveforms(filename, distance_cut=None):
             lon_vals = grp['ecliptic_lon'][:]
 
             for j, gidx in enumerate(idx):
-                if not keep[gidx]:
+
+                new_idx=old_to_new[gidx]
+                if new_idx == -1:
                     continue
 
-                A[gidx] = A_vals[j]
-                E[gidx] = E_vals[j]
-                fr[gidx] = fr_vals[j]
-                ecl_lat[gidx] = lat_vals[j]
-                ecl_lon[gidx] = lon_vals[j]
-                with_wf[idx] = True
+                A[new_idx] = A_vals[j]
+                E[new_idx] = E_vals[j]
+                fr[new_idx] = fr_vals[j]
+                ecl_lat[new_idx] = lat_vals[j]
+                ecl_lon[new_idx] = lon_vals[j]
+                with_wf[new_idx] = True
 
         data = {
             'A': A,
             'E': E,
             'fr': fr,
-            'source_psd_estimate': f['source_psd_estimate'][:],
-            'f0': f['meta/f0'][:],
-            'Ampl': f['meta/Ampl'][:],
-            'fdot': f['meta/fdot'][:],
+            'source_psd_estimate': f['source_psd_estimate'][:][keep],
+            'f0': f['meta/f0'][:][keep],
+            'Ampl': f['meta/Ampl'][:][keep],
+            'fdot': f['meta/fdot'][:][keep],
             'with_wf': with_wf,
             'ecliptic_lat': ecl_lat,
             'ecliptic_lon': ecl_lon,
-            'lum_dist': f['meta/lum_dist'][:] * 1000,
+            'lum_dist': dist[keep],
+            'id': global_id,
             'T_obs': f.attrs['T_obs']
         }
                 
@@ -249,7 +260,8 @@ def separate_snr(sources, indices, psd_total_global,  global_fr, calculate_snr_f
             'A': sources['A'][idx],
             'E':sources['E'][idx],
             'psd_total': psd_source,
-            'id': idx,
+            'id': sources['id'][idx],
+            'local_idx': idx,
             'ecliptic_lon':sources['ecliptic_lon'][idx],
             'ecliptic_lat':sources['ecliptic_lat'][idx],
         }
@@ -359,7 +371,7 @@ def run_iterative_separation(state,
         state['snr_threshold']/2
     )
 
-    state['idx_unresolved'] = [r['source']['id'] for r in snr_candidates]
+    state['idx_unresolved'] = [r['source']['local_idx'] for r in snr_candidates]
     state['idx_confusion_only'] = list(unresolved_instr)
     state['idx_unresolved'] = list(state['idx_unresolved'])
     state['idx_confusion_only'] = list(state['idx_confusion_only'])
@@ -375,9 +387,8 @@ def run_iterative_separation(state,
         if print_progress:
             print(f"\n--- Iteration {iteration} ---")
         
-        # STEP 1: Calculate global confusion PSD
+        # STEP 1: Calculate global confusion PSD (A=E)
         A_tot = np.zeros_like(state['global_fr'], dtype=np.complex128)
-        E_tot = np.zeros_like(state['global_fr'], dtype=np.complex128)
 
         confusion_idx = (
             list(state['idx_unresolved']) +
@@ -424,7 +435,7 @@ def run_iterative_separation(state,
             state['waveforms'],
             state['idx_unresolved'],
             psd_total_global,
-            state['global_fr'],
+            global_fr,
             state['calculate_snr'],
             state['snr_threshold']
         )
@@ -461,11 +472,13 @@ def run_iterative_separation(state,
         if print_progress:
             print(f"\nReached maximum iterations ({max_iterations})")
     
+    resolved_global_ids = [r['source']['id'] for r in state['sources_resolved']]
+
     results = {
         'resolved_sources': state['sources_resolved'],
         'global_fr': global_fr,
         'psd_confusion': psd_confusion_iter,
-        'unresolved_indices': state['idx_unresolved'],
+        'resolved_global_indices': resolved_global_ids,
         'n_resolved': len(state['sources_resolved']),
         'n_unresolved': len(state['idx_unresolved']),
         'iterations': iteration,
