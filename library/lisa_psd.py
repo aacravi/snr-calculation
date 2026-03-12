@@ -48,11 +48,11 @@ def S_OMS_AE(f, tdi, L= 2.5e9/constants.c, **kwargs):
 def  S_gal(f, L= 2.5e9/constants.c,):
     omega = 2 * np.pi * f
     A = 9e-45
-    fk = 0.00113 
-    alpha = 0.138
-    beta = -221
-    k = 521
-    gam = 1680
+    fk = 0.00173 
+    alpha = 0.165
+    beta = 299
+    k = 611
+    gam = 1340
 
     return A*f**(-7/3)*np.exp(-f**alpha + beta*f*np.sin(k*f))*(1+np.tanh(gam*(fk-f)))
 
@@ -139,6 +139,11 @@ from library.sgwb_Boileau import sgwb_noise_boileau
 from pycbc.psd.analytical_space import averaged_response_lisa_tdi
 
 def noise_psd_AE_Boileau(f,  tdi, model, **kwargs):
+    """
+    Returns extragalactic model from Boileau et al.
+
+    Possible models: 'Madau Dickinson alpha4', 'Madau Fragos default', 'Strolger alpha4'
+    """
     return  1.5*averaged_response_lisa_tdi(f, tdi =tdi)* sgwb_noise_boileau(f, model)
 
 

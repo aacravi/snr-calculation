@@ -2,7 +2,7 @@ from lisaorbits import EqualArmlengthOrbits
 from fastgb import fastgb
 import numpy as np
 
-def tdi_XYZ_fastGB(f0:float, f_dot:float, ampl:float, bet: float, lam:float, psi:float, inclination:float, phi0:float, T_obs:float, N:int, delta_t:float, tdi=1.5, **kwargs):
+def tdi_XYZ_fastGB(f0:float, f_dot:float, ampl:float, bet: float, lam:float, psi:float, inclination:float, phi0:float, T_obs:float, N:int, delta_t:float, t0=0, tdi=1.5, **kwargs):
     """
     Generate TDI X,Y,Z channels using FastGB
     
@@ -30,6 +30,8 @@ def tdi_XYZ_fastGB(f0:float, f_dot:float, ampl:float, bet: float, lam:float, psi
     N: number of frequency bins to generate waveform
 
     delta_t: sampling time in seconds 
+
+    t0: initial time for LISA orbit in seconds
     
     """
     pGB = np.array([f0 , # f0 Hz
