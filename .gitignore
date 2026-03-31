@@ -43,21 +43,12 @@ Thumbs.db
 *.swp
 
 # ==============================
-# Specific files you want to ignore
+# Specific files 
 # ==============================
 # Notebooks and .py files
-GW-assignment.ipynb
-pycbc-snr.ipynb
-Cosmic.ipynb
-test.py 
-catalog.ipynb
-iteration_loop_test.ipynb
-iteration_loop.ipynb
-Plots.ipynb
-Plots_tdi15.ipynb
-Plots_tdi2.ipynb
-compare_results.ipynb
-thesis-plots.ipynb
+notebooks/
+resolved-sources/
+test.py
 
 # Other types of files
 
@@ -68,10 +59,7 @@ binaries_test_*
 
 *.h5
 *.csv
+*.hdf5
+*.txt
 
 cosmic-inifile.ini 
-dat_kstar1_11_14_kstar2_11_14_SFstart_13700.0_SFduration_0.0_metallicity_0.014.h5
-log_kstar1_11_14_kstar2_11_14_SFstart_13700.0_SFduration_0.0_metallicity_0.014.txt
-resolved_sources.hdf5
-resolved_sources_1000000.hdf5
-galaxy_fit_results.csv
